@@ -1,0 +1,14 @@
+{
+  "firstName": "Chris",
+  "lastName": "Eteka",
+  "dob": "10-10-1998",
+  "personal": {
+    "id": "hadcqhck-jheb2378-cnslkjn-238ujkdnc",
+    "familyName": "Eteka"
+  },
+  "houses": [
+    "maitama",
+    "lagos",
+    "abuja"
+  ]
+}

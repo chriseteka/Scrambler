@@ -1,16 +1,16 @@
 package com.chrisworks
 package util
 
-import org.json4s.DefaultFormats
-import org.json4s.native.{Json, JsonParser}
+import io.circe._
+import io.circe.jawn.JawnParser
+import io.circe.parser._
 
 import java.io.{BufferedWriter, File, FileWriter}
+import java.nio.file.Path
 import javax.swing.JFileChooser
 import scala.util.{Failure, Success, Try}
 
 object FileUtil {
-
-  type ObjectRepresentation = Map[String, Any]
 
   val FILE_EXT = ".json"
   val validateFile: String => Try[Boolean] = filePath => {
@@ -36,17 +36,15 @@ object FileUtil {
    * @param filePath This is the path to the json file of interest
    * @return Option[JValue], just in case the result doesn't exist, we are guaranteed not to fail
    */
-  def readFileFrom(filePath: String): Option[(String, ObjectRepresentation)] = {
+  def readFileFrom(filePath: String): Option[(String, Json)] = {
     println("Operation started...")
     (for {
       _ <- validateFile(filePath)
       _ <- Success(println("Reading file..."))
-      bufferedResource <- Try(scala.io.Source.fromFile(filePath))
-      _ <- Success(println("Parsing file..."))
-      jsonValue <- Try(JsonParser.parse(bufferedResource.bufferedReader()))
-      result = jsonValue.toSome.map { value =>
+      parsedResult <- JawnParser(true).parsePath(Path.of(filePath)).toTry
+      result = {
         val outputPath = filePath.replace(FILE_EXT, "")
-        outputPath -> value.values.asInstanceOf[ObjectRepresentation]
+        Some(outputPath -> parsedResult)
       }
     } yield result) match {
       case Failure(exception) =>
@@ -66,11 +64,11 @@ object FileUtil {
    * @param outputPath This is the path where the output json file will be written into
    * @param data       This is the scrambled data
    */
-  def turnScrambledDataToFile(outputPath: String, data: ObjectRepresentation): Unit = {
+  def turnScrambledDataToFile(outputPath: String, data: Json): Unit = {
     println("Started writing output...")
     val file = new File(outputPath + FILE_EXT)
     val bw = new BufferedWriter(new FileWriter(file))
-    Json(DefaultFormats).writePretty(data, bw)
+    bw.write(data.spaces2)
     println("Completed writing output...")
     bw.close()
   }

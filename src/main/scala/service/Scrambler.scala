@@ -1,7 +1,10 @@
 package com.chrisworks
 package service
 
-import util.FileUtil.ObjectRepresentation
+import io.circe.optics.JsonPath._
+import io.circe.optics.all.jsonPlated
+import io.circe.{Json, JsonObject}
+import monocle.function.Plated
 
 import java.util.UUID
 import scala.util.Random
@@ -19,6 +22,7 @@ trait Scrambler {
 object Scrambler {
 
   val liveScrambler: Scrambler = ScramblerImpl()
+  val INPUT_KEY = "input"
 
   //These are the keys of interest, whose value we plan to scramble in a consistent manner
   val keysOfInterest = List("name", "id")
@@ -29,7 +33,9 @@ object Scrambler {
    * 1. Any key ending with name must be scrambled to something else which must be unique
    * 2. Anything ending with the word 'id' must be replaced with a consistent UUID, so as to maintain relationship
    */
-  val anonymizeInput: ObjectRepresentation => Option[ObjectRepresentation] = input => {
+  val anonymizeInput: Json => Option[Json] = input => {
+
+    val preparedInput = Json.fromJsonObject(JsonObject(INPUT_KEY -> input))
 
     /* Here I store ids and name, so as to track them to maintain consistent
       Hence a name "Chris Eteka" within a file that is replaced once by "RFHYRT YHGFH" will stay consistent round the file
@@ -57,25 +63,21 @@ object Scrambler {
       store(oldValue)
     }
 
-    //This is not tail recursive, hence for a large file this may blow up our stack
-    def anonymizeHelper(dataToAnonymize: ObjectRepresentation): ObjectRepresentation = {
-
-      var res = dataToAnonymize
-
-      for (key <- dataToAnonymize.keys) {
-        val data: Any = dataToAnonymize(key)
-        if (!data.isInstanceOf[ObjectRepresentation]) {
-          val lowerCasedKey = key.toLowerCase
-          if (lowerCasedKey.matches(matchRegex))
-            res = res.updated(key, produceAnonymousValue(data.asInstanceOf[String], lowerCasedKey.endsWith("name")))
-          else res = res.updated(key, data)
-        }
-        else res = res.updated(key, anonymizeHelper(data.asInstanceOf[ObjectRepresentation]))
+    /**
+     * This does the job of taking an object, inspecting it and doing modification on it.
+     * Is it the best I could have done? I have seen modifyF and traverseF, could they have been better?
+     */
+    val modifyIfKeyEndsWithIdOrName: Json => Json =
+      root.obj.modify { obj =>
+        JsonObject.fromIterable(obj.toIterable.map { case (key, json) =>
+          if (key.toLowerCase.matches(matchRegex) && json.isString) {
+            (key, Json.fromString(produceAnonymousValue(json.noSpaces, key.toLowerCase.endsWith("name"))))
+          } else (key, json)
+        })
       }
 
-      res
-    }
+    val recursivelyTransform: Json => Json = Plated.transform[Json](modifyIfKeyEndsWithIdOrName)
 
-    Some(anonymizeHelper(input))
+    Some(recursivelyTransform(preparedInput)).map(_.\\(INPUT_KEY).head)
   }
 }

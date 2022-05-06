@@ -21,11 +21,13 @@ trait Scrambler {
 
 object Scrambler {
 
-  val liveScrambler: Scrambler = ScramblerImpl()
+  val ID = "id"
+  val NAME = "name"
   val INPUT_KEY = "input"
+  val liveScrambler: Scrambler = ScramblerImpl()
 
   //These are the keys of interest, whose value we plan to scramble in a consistent manner
-  val keysOfInterest = List("name", "id")
+  val keysOfInterest = List(ID, NAME)
   val matchRegex: String = keysOfInterest.mkString(".*(", "|", ")$") //sample => ".*(name|id)$"
 
   /**
@@ -69,11 +71,14 @@ object Scrambler {
      */
     val modifyIfKeyEndsWithIdOrName: Json => Json =
       root.obj.modify { obj =>
-        JsonObject.fromIterable(obj.toIterable.map { case (key, json) =>
-          if (key.toLowerCase.matches(matchRegex) && json.isString) {
-            (key, Json.fromString(produceAnonymousValue(json.noSpaces, key.toLowerCase.endsWith("name"))))
-          } else (key, json)
-        })
+        JsonObject.fromIterable(
+          obj.toIterable.map { case (key, json) =>
+            val lowerKey = key.toLowerCase
+            if (lowerKey.matches(matchRegex) && json.isString)
+              (key, Json.fromString(produceAnonymousValue(json.noSpaces, lowerKey.endsWith(NAME))))
+            else (key, json)
+          }
+        )
       }
 
     val recursivelyTransform: Json => Json = Plated.transform[Json](modifyIfKeyEndsWithIdOrName)

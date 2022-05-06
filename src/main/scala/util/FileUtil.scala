@@ -3,7 +3,6 @@ package util
 
 import io.circe._
 import io.circe.jawn.JawnParser
-import io.circe.parser._
 
 import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.Path

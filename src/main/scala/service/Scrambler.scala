@@ -6,8 +6,8 @@ import io.circe.optics.all.jsonPlated
 import io.circe.{Json, JsonObject}
 import monocle.function.Plated
 
-import java.util.UUID
-import scala.util.Random
+import java.nio.charset.StandardCharsets
+import java.util.{Base64, UUID}
 
 trait Scrambler {
 
@@ -37,32 +37,12 @@ object Scrambler {
    */
   val anonymizeInput: Json => Option[Json] = input => {
 
-    val preparedInput = Json.fromJsonObject(JsonObject(INPUT_KEY -> input))
+    def someRandomUUID(id: String): String = UUID.nameUUIDFromBytes(id.getBytes).toString
 
-    /* Here I store ids and name, so as to track them to maintain consistent
-      Hence a name "Chris Eteka" within a file that is replaced once by "RFHYRT YHGFH" will stay consistent round the file
-      Also, an id = 1, which has been replaced once by "ABC" will stay consistent round the file
-     */
-    var store: Map[String, String] = Map.empty
-
-    def someRandomName: String = {
-      val characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-      val random = Random
-      var name = ""
-      var surname = ""
-      (1 to 5).foreach(_ => {
-        name = name.appended(characters.charAt(random.nextInt(characters.length)))
-        surname = surname.appended(characters.charAt(random.nextInt(characters.length)))
-      })
-      s"$surname-$name"
-    }
+    def someRandomName(oldValue: String): String = Base64.getEncoder.encodeToString(oldValue.getBytes(StandardCharsets.UTF_8)).substring(8, 15)
 
     val produceAnonymousValue: (String, Boolean) => String = (oldValue, isName) => {
-      val substituteExist = store.keys.exists(_.equalsIgnoreCase(oldValue))
-      if (!substituteExist)
-        store = store.updated(oldValue, if (isName) someRandomName else UUID.randomUUID().toString)
-
-      store(oldValue)
+      if (isName) someRandomName(oldValue) else someRandomUUID(oldValue)
     }
 
     /**
@@ -81,8 +61,6 @@ object Scrambler {
         )
       }
 
-    val recursivelyTransform: Json => Json = Plated.transform[Json](modifyIfKeyEndsWithIdOrName)
-
-    Some(recursivelyTransform(preparedInput)).map(_.\\(INPUT_KEY).head)
+    Some(Plated.transform[Json](modifyIfKeyEndsWithIdOrName)(input))
   }
 }

@@ -8,6 +8,10 @@ case class ScramblerImpl() extends Scrambler {
 
   override def scramble(filePath: String): Unit = for {
     (outputPath, rawData) <- FileUtil.readFileFrom(filePath)
-    scrambledData <- anonymizeInput(rawData)
-  } yield FileUtil.turnScrambledDataToFile(outputPath, scrambledData)
+    (scrambledData, graphBuilder) <- anonymizeInput(rawData)
+  } yield {
+    FileUtil.turnScrambledDataToFile(outputPath, scrambledData)
+    val graph = graphBuilder.buildGraph() //todo: Continue this
+    ()
+  }
 }

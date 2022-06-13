@@ -11,7 +11,6 @@ case class ScramblerImpl() extends Scrambler {
     (scrambledData, graphBuilder) <- anonymizeInput(rawData)
   } yield {
     FileUtil.turnScrambledDataToFile(outputPath, scrambledData)
-    val graph = graphBuilder.buildGraph() //todo: Continue this
-    ()
+    FileUtil.writeAsGraphvizFile(outputPath, graphBuilder.buildGraph())
   }
 }

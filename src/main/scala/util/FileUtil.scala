@@ -71,4 +71,11 @@ object FileUtil {
     println("Completed writing output...")
     bw.close()
   }
+
+  def writeAsGraphvizFile(outputPath: String, data: String): Unit = {
+    val file = new File(outputPath + "-graph.gv")
+    val bw = new BufferedWriter(new FileWriter(file))
+    bw.write(data)
+    bw.close()
+  }
 }

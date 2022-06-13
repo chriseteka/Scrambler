@@ -50,14 +50,28 @@ object Scrambler {
     var graphBuilder: GraphBuilder = GraphBuilder()
 
     def validateThenAddToGraph(key: String, json: Json): Unit = {
-      //We are interested only when the key holds a JSON or Array of Objects
+      //Assume this to be naive, say we have just two possibility
       def computeDirections(json: Json): List[String] = {
+
+        def extractPathOnlyIfIDWasFound(key: String, json: Json): String = {
+          if (key.toLowerCase.contains("id") && json.isString)
+            GraphBuilder.buildDirection(key, json.toString())
+          else if (json.isObject)
+            json.asObject.map(_.toIterable.foldLeft("") { (res, data) =>
+              val attemptToDigDeep = extractPathOnlyIfIDWasFound(data._1, data._2)
+              if (attemptToDigDeep.nonEmpty)
+                GraphBuilder.buildDirection(key, data._1)
+              else res
+            }).getOrElse("")
+          else ""
+        }
+
 
         val extractDirs: JsonObject => List[String] =
           _.toIterable
-            .filter { case (_, value) => value.isObject }
-            .map { case (key, _) => key }
-            .toList
+            .foldLeft(List.empty[String]) { (res, data) =>
+              res :+ extractPathOnlyIfIDWasFound(data._1, data._2)
+            }
 
         if (json.isObject)
           json.asObject.map(extractDirs).getOrElse(List.empty)
@@ -72,9 +86,8 @@ object Scrambler {
         else List.empty
       }
 
-      val graph = Graph(key, computeDirections(json))
-      if (graph.directions.nonEmpty)
-        graphBuilder = graphBuilder.copy(graphBuilder.relationships :+ graph)
+      val graph = Graph(key, computeDirections(json).filter(_.nonEmpty))
+      graphBuilder = graphBuilder.copy(graphBuilder.relationships :+ graph)
     }
 
     /**

@@ -18,7 +18,13 @@ case class GraphBuilder(relationships: List[Graph] = List()) {
    *
    * */
   def buildGraph(): String = relationships
-    .flatMap(g => g.directions.map(d => s"${g.name} -> $d"))
-    .mkString("digraph {\n", "\n\t", "\n}")
+    .flatMap(g => g.directions.map(d => GraphBuilder.buildDirection(g.name, d)))
+    .mkString("digraph ProfileSync {\n\t", "\n\t", "\n}")
 
+}
+
+object GraphBuilder {
+
+  def buildDirection(data: String*): String = data.mkString(" -> ")
+  def buildDirection(key: String, data: List[String]): String = (key +: data).mkString(" -> ")
 }

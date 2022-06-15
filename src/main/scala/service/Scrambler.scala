@@ -18,7 +18,9 @@ trait Scrambler {
    *
    * @param filePath This is the path to the json file whose sensitive data need to be scrambled
    */
-  def scramble(filePath: String): Unit
+  def scramble(filePath: String): Unit = scramble(filePath, produceGraph = true)
+  def scramble(filePath: String, produceGraph: Boolean): Unit
+
 }
 
 object Scrambler {

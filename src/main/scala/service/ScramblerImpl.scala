@@ -12,7 +12,8 @@ case class ScramblerImpl() extends Scrambler {
     graph <- SyncGraph.fromJson(rawData)
     (scrambledData, graphBuilder) <- anonymizeInput(rawData)
   } yield {
-    println(graph.grantee)
+    val g = graph.buildGraph()
+    println(g)
     FileUtil.turnScrambledDataToFile(outputPath, scrambledData)
     if (produceGraph) FileUtil.writeAsGraphvizFile(outputPath, graphBuilder.buildGraph())
   }

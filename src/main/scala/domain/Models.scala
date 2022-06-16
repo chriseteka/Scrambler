@@ -3,7 +3,7 @@ package domain
 
 import domain.AccessMean.AccessMeans
 import domain.AccessProfileConnAccessMean.AccessProfilesConnAccessMeans
-import domain.Entity.{Grantee, Grantors}
+import domain.Grantor.Grantors
 import domain.IpIpRelationship.IpIpRelationships
 import domain.Keys.SharedKeys._
 
@@ -23,29 +23,42 @@ object Shape {
   final case object Trapezium extends Shape
 
   final case object Rectangle extends Shape
+
+  final case object Parallelogram extends Shape
 }
 
-sealed abstract class GraphObject(shape: Shape)
+sealed abstract class GraphObject(val shape: Shape) {
+  def partialBuildGraph(): String
+}
 
 /** This defines a simple connection by stating the key on which the connection is made to and the UUID the key holds */
-final case class Connection(connKey: String, value: String)
+final case class Connection(connKey: String, value: String) {
 
-final case class ConnectionWithType(connection: Connection, oType: String)
+  def conn: String = s"[$connKey: $value]"
+}
+
+final case class ConnectionWithType(connection: Connection, oType: String) {
+
+  def conn: String = if (oType.isBlank) connection.conn else s"$connection - $oType"
+}
 
 /** This defines how a typical identifier is represented */
-final case class IdentifierWithType(id: String, oType: String = "")
+final case class IdentifierWithType(id: String, oType: String = "") {
+
+  def produceId: String = if (oType.isBlank) id else s"$id - $oType"
+}
 
 /** We attempt to use this in describing an entity (Grantor, and Grantee) */
-sealed trait EntityType
+sealed abstract class EntityType(val color: String)
 
 object EntityType {
-  final case object Individual extends EntityType
+  final case object Individual extends EntityType("BLUE")
 
-  final case object Organisation extends EntityType
+  final case object Organisation extends EntityType("RED")
 
-  final case object OrganisationUnit extends EntityType
+  final case object OrganisationUnit extends EntityType("GREEN")
 
-  final case object Unknown extends EntityType
+  final case object Unknown extends EntityType("BLACK")
 
   def from(str: String): EntityType =
     List(Individual, Organisation, OrganisationUnit)
@@ -53,20 +66,21 @@ object EntityType {
       .getOrElse(Unknown)
 }
 
-final case class Entity(identifier: IdentifierWithType,
-                        countryCode: String,
-                        entityType: EntityType) extends GraphObject(Shape.Rectangle)
+final case class Grantee(identifier: IdentifierWithType,
+                         countryCode: String,
+                         entityType: EntityType) extends GraphObject(Shape.Triangle) {
 
-object Entity {
+  override def partialBuildGraph(): String =
+    s"[$shape: ${entityType.color}: $countryCode] -> [${identifier.produceId}]"
 
-  import JsonObjectEnricher._
+}
+
+object Grantee {
+  import JsonObjectEnricher.toEnricher
   import Keys.SharedKeys._
 
-  type Grantee = Entity
-  type Grantors = List[Entity]
-
-  val asEntity: (String, JsonObject) => Entity =
-    (entityType, obj) => Entity(
+  def asEntity(entityType: String, obj: JsonObject): Grantee =
+    Grantee(
       IdentifierWithType(obj.extractAsString(ID)),
       obj.extractAsString(COUNTRY_CODE),
       EntityType.from(entityType)
@@ -74,9 +88,34 @@ object Entity {
 
   def buildEntityFrom(data: (String, Json)): Option[Grantee] =
     data._2.asObject.map(obj => asEntity(data._1, obj))
+}
+
+final case class Grantor(identifier: IdentifierWithType,
+                         countryCode: String,
+                         entityType: EntityType) extends GraphObject(Shape.Rectangle) {
+
+  override def partialBuildGraph(): String =
+    s"[$shape: ${entityType.color}: $countryCode] -> [${identifier.produceId}]"
+}
+
+object Grantor {
+  import JsonObjectEnricher.toEnricher
+  import Keys.SharedKeys._
+
+  type Grantors = List[Grantor]
+
+  def asEntity(entityType: String, obj: JsonObject): Grantor =
+    Grantor(
+      IdentifierWithType(obj.extractAsString(ID)),
+      obj.extractAsString(COUNTRY_CODE),
+      EntityType.from(entityType)
+    )
+
+  def buildEntityFrom(data: (String, Json)): Option[Grantor] =
+    data._2.asObject.map(obj => asEntity(data._1, obj))
 
   def buildEntityFrom(data: List[(String, Json)]): Option[Grantors] =
-    Some(data.foldLeft(List.empty[Entity]) { (res, next) =>
+    Some(data.foldLeft(List.empty[Grantor]) { (res, next) =>
       buildEntityFrom(next) match {
         case Some(value) => res :+ value
         case None => res
@@ -90,7 +129,16 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
                                   grantors: List[ConnectionWithType],
                                   grantee: Option[ConnectionWithType],
                                   maybeSuper: Option[ConnectionWithType])
-  extends GraphObject(Shape.Trapezium)
+  extends GraphObject(Shape.Trapezium) {
+
+  override def partialBuildGraph(): String =
+    s"""
+       | [$shape: $countryCode] -> [${identifier.produceId}]
+       | [${identifier.produceId}] -> [${grantors.map(_.conn)}]
+       | [${identifier.produceId}] -> [${grantee.map(_.conn)}]
+       | [${identifier.produceId}] -> [${maybeSuper.map(_.conn)}]
+       |""".stripMargin
+}
 
 object IpIpRelationship {
 
@@ -123,7 +171,13 @@ object IpIpRelationship {
 
 /** An access mean has more than this, but we only care to know how to identifier it, also we tag it as a graph object */
 final case class AccessMean(identifier: IdentifierWithType,
-                            defaultId: String) extends GraphObject(Shape.Circle)
+                            defaultId: String) extends GraphObject(Shape.Circle) {
+
+  override def partialBuildGraph(): String =
+    s"""
+      | [$shape: $defaultId] -> [${identifier.produceId}]
+      |""".stripMargin
+}
 
 object AccessMean {
   import JsonObjectEnricher._
@@ -152,7 +206,15 @@ final case class AccessProfile(identifier: IdentifierWithType,
                                name: String,
                                holderId: Option[Connection],
                                userId: Option[Connection],
-                               ipIpRelations: List[Connection]) extends GraphObject(Shape.Square)
+                               ipIpRelations: List[Connection]) extends GraphObject(Shape.Square) {
+  override def partialBuildGraph(): String =
+    s"""
+      | [$shape: $name] -> [${identifier.produceId}]
+      | [${identifier.produceId}] -> [${holderId.map(_.conn)}]
+      | [${identifier.produceId}] -> [${userId.map(_.conn)}]
+      | [${identifier.produceId}] -> [${ipIpRelations.map(_.conn)}]
+      |""".stripMargin
+}
 object AccessProfile {
   import JsonObjectEnricher._
 
@@ -168,8 +230,13 @@ object AccessProfile {
     )
 }
 
-/** This describes the connection between access profile and access means, it's more like a Wrapper hence we don'oType consider it a graph */
-final case class AccessProfileConnAccessMean(accessProfile: AccessProfile, accessMeans: AccessMeans)
+/** This describes the connection between access profile and access means, it's more like a Wrapper hence a graph */
+final case class AccessProfileConnAccessMean(accessProfile: AccessProfile, accessMeans: AccessMeans) extends GraphObject(Shape.Parallelogram) {
+  override def partialBuildGraph(): String =
+    s"""
+       | [$shape: ${accessProfile.identifier.id}] -> [${accessMeans.map(_.partialBuildGraph())}]
+       |""".stripMargin
+}
 
 object AccessProfileConnAccessMean {
 
@@ -195,7 +262,19 @@ final case class SyncGraph(grantee: Option[Grantee],
                            grantors: Option[Grantors],
                            ipIpRelationships: Option[IpIpRelationships],
                            accessMeans: Option[AccessMeans],
-                           accessProfileConnAccessMean: Option[AccessProfilesConnAccessMeans])
+                           accessProfileConnAccessMean: Option[AccessProfilesConnAccessMeans]) {
+
+  lazy val relationships: Seq[Serializable] = List(
+    grantee.map(_.partialBuildGraph()).getOrElse(""),
+    grantors.map(_.map(_.partialBuildGraph())).getOrElse(""),
+    ipIpRelationships.map(_.map(_.partialBuildGraph())).getOrElse(""),
+    accessMeans.map(_.map(_.partialBuildGraph())).getOrElse(""),
+    accessProfileConnAccessMean.map(_.map(_.partialBuildGraph())).getOrElse("")
+  )
+
+  def buildGraph(): String = relationships
+    .mkString("digraph ProfileSync {\n\t", "\n\t", "\n}")
+}
 
 object SyncGraph {
 
@@ -246,8 +325,10 @@ object Keys {
 }
 
 final case class JsonObjectEnricher(obj: JsonObject) {
+  import JsonEnricher.toEnricher
 
   def extractAsString(key: String): String = obj(key).map(_.toString()).getOrElse("")
+    .replaceAll("[^a-zA-Z\\d]+","")
 
   private val readConnectionWithTypeFrom: JsonObject => Option[List[ConnectionWithType]] = jsonObject => {
     val oType = jsonObject(TYPE).map(_.toString()).getOrElse("")
@@ -255,7 +336,7 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       .flatMap(_.asObject)
       .map(_.toIterable
         .foldLeft(List.empty[ConnectionWithType]) { case (res, next) =>
-          res :+ ConnectionWithType(Connection(next._1, next._2.asString.getOrElse("")), oType)
+          res :+ ConnectionWithType(Connection(next._1, next._2.turnToString), oType)
         }
       )
   }
@@ -265,7 +346,7 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       .flatMap(_.asObject)
       .flatMap(_.toIterable
         .headOption
-        .map { case (str, json) => Connection(str, json.asString.getOrElse("")) }
+        .map { case (str, json) => Connection(str, json.turnToString) }
       )
 
   def extractFromObjectAsConnections(key: String): List[Connection] =
@@ -274,7 +355,7 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       .map(_.flatMap(_.asObject))
       .map(_.flatMap(_.toIterable)
         .foldLeft(List.empty[Connection]) { (res, next) =>
-          res :+ Connection(next._1, next._2.asString.getOrElse(""))
+          res :+ Connection(next._1, next._2.turnToString)
         }
       ).getOrElse(List.empty)
 
@@ -309,9 +390,12 @@ final case class JsonEnricher(json: Json) {
   lazy val convertToArrayWithArraysSplitIndexes: Option[List[(Json, Json)]] =
     json.asArray.map(_.toList.flatMap(_.asArray).map(a => (a(0), a(1))))
 
-  def toGrantee: Option[Grantee] = json.asObject.flatMap(e => Entity.buildEntityFrom(e.toList.head))
+  def turnToString: String = json.asString.getOrElse("")
+    .replaceAll("[^a-zA-Z\\d]+","")
 
-  def toGrantors: Option[Grantors] = convertToArrayWithObjectsSplitKeys.flatMap(Entity.buildEntityFrom)
+  def toGrantee: Option[Grantee] = json.asObject.flatMap(e => Grantee.buildEntityFrom(e.toList.head))
+
+  def toGrantors: Option[Grantors] = convertToArrayWithObjectsSplitKeys.flatMap(Grantor.buildEntityFrom)
 
   def toIpIpRelationships: Option[IpIpRelationships] = json.asArray.map(_.toList).flatMap(IpIpRelationship.buildRelationshipFrom)
 

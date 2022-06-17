@@ -10,11 +10,9 @@ case class ScramblerImpl() extends Scrambler {
   override def scramble(filePath: String, produceGraph: Boolean): Unit = for {
     (outputPath, rawData) <- FileUtil.readFileFrom(filePath)
     graph <- SyncGraph.fromJson(rawData)
-    (scrambledData, graphBuilder) <- anonymizeInput(rawData)
+    (scrambledData, _) <- anonymizeInput(rawData)
   } yield {
-    val g = graph.buildGraph()
-    println(g)
     FileUtil.turnScrambledDataToFile(outputPath, scrambledData)
-    if (produceGraph) FileUtil.writeAsGraphvizFile(outputPath, graphBuilder.buildGraph())
+    if (produceGraph) FileUtil.writeAsGraphvizFile(outputPath, graph.materializeRelationships)
   }
 }

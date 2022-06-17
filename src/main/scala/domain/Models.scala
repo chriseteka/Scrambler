@@ -14,6 +14,8 @@ sealed trait Shape
 
 object Shape {
 
+  final case object Unknown extends Shape
+
   final case object Circle extends Shape
 
   final case object Square extends Shape
@@ -37,9 +39,12 @@ final case class Connection(connKey: String, value: String) {
   def conn: String = s"[$connKey: $value]"
 }
 
-final case class ConnectionWithType(connection: Connection, oType: String) {
+/** This class is used to describe a connection from an entity to another, where few data are extracted from each entity. The shape field helps tell us which object this connection was made to */
+final case class ConnectionWithType(connection: Connection, oType: String, shape: Shape) {
 
-  def conn: String = if (oType.isBlank) connection.conn else s"$connection - $oType"
+  def conn: String =
+    if (oType.isBlank) s"$shape: ${connection.conn}"
+    else s"$shape: ${connection.conn} - $oType"
 }
 
 /** This defines how a typical identifier is represented */
@@ -79,6 +84,8 @@ object Grantee {
   import JsonObjectEnricher.toEnricher
   import Keys.SharedKeys._
 
+  val shape: Shape = Shape.Triangle
+
   def asEntity(entityType: String, obj: JsonObject): Grantee =
     Grantee(
       IdentifierWithType(obj.extractAsString(ID)),
@@ -102,6 +109,7 @@ object Grantor {
   import JsonObjectEnricher.toEnricher
   import Keys.SharedKeys._
 
+  val shape: Shape = Shape.Rectangle
   type Grantors = List[Grantor]
 
   def asEntity(entityType: String, obj: JsonObject): Grantor =
@@ -134,9 +142,9 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
   override def partialBuildGraph(): String =
     s"""
        | [$shape: $countryCode] -> [${identifier.produceId}]
-       | [${identifier.produceId}] -> [${grantors.map(_.conn)}]
-       | [${identifier.produceId}] -> [${grantee.map(_.conn)}]
-       | [${identifier.produceId}] -> [${maybeSuper.map(_.conn)}]
+       | [${identifier.produceId}] -> [${grantors.map(_.conn).mkString(",")}]
+       | [${identifier.produceId}] -> [${grantee.map(_.conn).getOrElse("")}]
+       | [${identifier.produceId}] -> [${maybeSuper.map(_.conn).getOrElse("")}]
        |""".stripMargin
 }
 
@@ -153,9 +161,9 @@ object IpIpRelationship {
       IpIpRelationship(
         IdentifierWithType(obj.extractAsString(ID), obj.extractAsString(TYPE)),
         obj.extractAsString(COUNTRY_CODE),
-        obj.extractFromArrayAsConnectionWithType(GRANTORS_KEY),
-        obj.extractFromObjAsConnectionWithType(GRANTEE_KEY).headOption,
-        obj.extractFromObjAsConnectionWithType(SUPER_HOLDER).headOption
+        obj.extractFromArrayAsConnectionWithType(GRANTORS_KEY, Grantor.shape),
+        obj.extractFromObjAsConnectionWithType(GRANTEE_KEY, Grantee.shape).headOption,
+        obj.extractFromObjAsConnectionWithType(SUPER_HOLDER, Shape.Unknown).headOption
       )
     )
 
@@ -234,7 +242,7 @@ object AccessProfile {
 final case class AccessProfileConnAccessMean(accessProfile: AccessProfile, accessMeans: AccessMeans) extends GraphObject(Shape.Parallelogram) {
   override def partialBuildGraph(): String =
     s"""
-       | [$shape: ${accessProfile.identifier.id}] -> [${accessMeans.map(_.partialBuildGraph())}]
+       | [$shape: ${accessProfile.identifier.id}] -> [${accessMeans.map(_.partialBuildGraph()).mkString(",")}]
        |""".stripMargin
 }
 
@@ -266,14 +274,15 @@ final case class SyncGraph(grantee: Option[Grantee],
 
   lazy val relationships: Seq[Serializable] = List(
     grantee.map(_.partialBuildGraph()).getOrElse(""),
-    grantors.map(_.map(_.partialBuildGraph())).getOrElse(""),
-    ipIpRelationships.map(_.map(_.partialBuildGraph())).getOrElse(""),
-    accessMeans.map(_.map(_.partialBuildGraph())).getOrElse(""),
-    accessProfileConnAccessMean.map(_.map(_.partialBuildGraph())).getOrElse("")
+    grantors.map(_.map(_.partialBuildGraph()).mkString(",")).getOrElse(""),
+    ipIpRelationships.map(_.map(_.partialBuildGraph()).mkString(",")).getOrElse(""),
+    accessMeans.map(_.map(_.partialBuildGraph()).mkString(",")).getOrElse(""),
+    accessProfileConnAccessMean.map(_.map(_.partialBuildGraph()).mkString(",")).getOrElse("")
   )
 
   def buildGraph(): String = relationships
     .mkString("digraph ProfileSync {\n\t", "\n\t", "\n}")
+    .replaceAll("\n,", ",")
 }
 
 object SyncGraph {
@@ -330,13 +339,13 @@ final case class JsonObjectEnricher(obj: JsonObject) {
   def extractAsString(key: String): String = obj(key).map(_.toString()).getOrElse("")
     .replaceAll("[^a-zA-Z\\d]+","")
 
-  private val readConnectionWithTypeFrom: JsonObject => Option[List[ConnectionWithType]] = jsonObject => {
+  private val readConnectionWithTypeFrom: (JsonObject, Shape) => Option[List[ConnectionWithType]] = (jsonObject, shape) => {
     val oType = jsonObject(TYPE).map(_.toString()).getOrElse("")
     jsonObject(ID)
       .flatMap(_.asObject)
       .map(_.toIterable
         .foldLeft(List.empty[ConnectionWithType]) { case (res, next) =>
-          res :+ ConnectionWithType(Connection(next._1, next._2.turnToString), oType)
+          res :+ ConnectionWithType(Connection(next._1, next._2.turnToString), oType, shape)
         }
       )
   }
@@ -360,18 +369,18 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       ).getOrElse(List.empty)
 
 
-  def extractFromArrayAsConnectionWithType(key: String): List[ConnectionWithType] = {
+  def extractFromArrayAsConnectionWithType(key: String, shape: Shape): List[ConnectionWithType] = {
     (for {
       s1 <- obj(key)
       s2 <- s1.asArray.map(_.toList.flatMap(_.asObject))
-    } yield s2.flatMap(readConnectionWithTypeFrom)).getOrElse(List.empty).flatten
+    } yield s2.flatMap(obj => readConnectionWithTypeFrom(obj, shape))).getOrElse(List.empty).flatten
   }
 
-  def extractFromObjAsConnectionWithType(key: String): List[ConnectionWithType] = {
+  def extractFromObjAsConnectionWithType(key: String, shape: Shape): List[ConnectionWithType] = {
     (for {
       s1 <- obj(key)
       s2 <- s1.asObject
-    } yield s2).flatMap(readConnectionWithTypeFrom).getOrElse(List.empty)
+    } yield s2).flatMap(obj => readConnectionWithTypeFrom(obj, shape)).getOrElse(List.empty)
   }
 
 }

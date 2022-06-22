@@ -231,6 +231,7 @@ final case class AccessMean(identifier: IdentifierWithType,
 object AccessMean {
   import JsonObjectEnricher._
 
+  val shape: Shape = Shape.Oval
   type AccessMeans = List[AccessMean]
 
   def buildAccessMeanFrom(data: Json): Option[AccessMean] =
@@ -307,15 +308,10 @@ final case class AccessProfileConnAccessMean(accessProfile: AccessProfile, acces
     "%s%s [margin=0 fillcolor=orange shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, accessProfile.identifier.id, shape.toString.toLowerCase, accessProfile.name, accessProfile.identifier.produceId)
 
-  val meansString: String = accessMeans.map(_.identifier.produceId).mkString(" |  ")
-
   /** This allows an object point to how it's key/id relates with some other objects within it's context or reach */
-  override def relatesWith(): String = {
-    s"""
-       | Prof${accessProfile.identifier.id}[shape=record, style=\"rounded,filled\", fillcolor=pink label=\"{Access Means | $meansString}\"]
-       | Prof${accessProfile.identifier.id} -> ${accessProfile.shape.lbl}${accessProfile.identifier.id} [dir=none, minlen=3, penwidth=2]
-       |""".stripMargin
-  }
+  override def relatesWith(): String = accessMeans.map(_.identifier.id)
+    .map(id => s"${AccessMean.shape.lbl}$id -> ${accessProfile.shape.lbl}${accessProfile.identifier.id} [dir=none, minlen=3, penwidth=2]")
+    .mkString("\n")
 }
 
 object AccessProfileConnAccessMean {
@@ -360,7 +356,8 @@ final case class SyncGraph(grantee: Option[Grantee],
       |digraph ProfileSyncMat {
       | {
       |   \t${returnDataOrEmptyStr(grantee.map(_.materializeGraph()))}
-      |   \t${returnDataOrEmptyStr(grantors.map(_.map(_.materializeGraph()).mkString(",")))}
+      |   \t${returnDataOrEmptyStr(grantors.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
+      |   \t${returnDataOrEmptyStr(accessMeans.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(ipIpRelationships.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(accessProfiles.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       | }

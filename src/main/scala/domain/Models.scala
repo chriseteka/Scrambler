@@ -161,9 +161,9 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
   extends GraphObject(Shape.Trapezium) {
 
   val possibleSuperHolder: String = if (maybeSuper.isEmpty) ""
-  else "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"%s: %s\"]"
+  else "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"SuperHolder, %s, %s\"]"
     .format(Grantor.shape.lbl, maybeSuper.get.connection.value, Organisation.color,
-      Grantor.shape.toString.toLowerCase, maybeSuper.get.connection.connKey, maybeSuper.get.connection.value)
+      Grantor.shape.toString.toLowerCase, countryCode, maybeSuper.get.connection.value)
 
   override def partialBuildGraph(): String =
     s"""

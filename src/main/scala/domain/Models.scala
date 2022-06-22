@@ -66,13 +66,13 @@ final case class IdentifierWithType(id: String, oType: String = "") {
 sealed abstract class EntityType(val color: String)
 
 object EntityType {
-  final case object Individual extends EntityType("BLUE")
+  final case object Individual extends EntityType("deepskyblue")
 
-  final case object Organisation extends EntityType("RED")
+  final case object Organisation extends EntityType("gold")
 
-  final case object OrganisationUnit extends EntityType("GREEN")
+  final case object OrganisationUnit extends EntityType("coral")
 
-  final case object Unknown extends EntityType("BLACK")
+  final case object Unknown extends EntityType("red")
 
   def from(str: String): EntityType =
     List(Individual, Organisation, OrganisationUnit)
@@ -88,7 +88,7 @@ final case class Grantee(identifier: IdentifierWithType,
     s"[$shape: ${entityType.color}: $countryCode] -> [${identifier.produceId}]"
 
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=%s shape=%s style=filled label=\"%s, %s\"]"
+    "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, identifier.id, entityType.color, shape.toString.toLowerCase, countryCode, identifier.produceId)
 
   override def relatesWith(): String = "" //Relates with no one, as it is sort of the base object that other point to
@@ -119,7 +119,7 @@ final case class Grantor(identifier: IdentifierWithType,
     s"[$shape: ${entityType.color}: $countryCode] -> [${identifier.produceId}]"
 
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=%s shape=%s style=filled label=\"%s, %s\"]"
+    "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, identifier.id, entityType.color, shape.toString.toLowerCase, countryCode, identifier.produceId)
 
   override def relatesWith(): String = "" //Relates with no one, as it is sort of the base object that other point to
@@ -168,14 +168,14 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
        |""".stripMargin
 
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=gray shape=%s style=filled label=\"%s, %s\"]"
+    "%s%s [margin=0 fillcolor=gray shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, identifier.id, shape.toString.toLowerCase, countryCode, identifier.produceId)
 
   override def relatesWith(): String = {
     val makePointer: Option[ConnectionWithType] => String = optional =>
-      if (optional.nonEmpty) s"${shape.lbl}${identifier.id} -> ${optional.map(c => c.shape.lbl + c.connection.value).get}" else ""
+      if (optional.nonEmpty) s"${shape.lbl}${identifier.id} -> ${optional.map(c => c.shape.lbl + c.connection.value).get} [minlen=3, penwidth=2]" else ""
     s"""
-       | ${grantors.map(grantor => shape.lbl + identifier.id + " -> " + grantor.shape.lbl + grantor.connection.value).mkString("\n")}
+       | ${grantors.map(grantor => shape.lbl + identifier.id + " -> " + grantor.shape.lbl + grantor.connection.value + " [minlen=3, penwidth=2]").mkString("\n")}
        | ${makePointer(grantee)}
        | ${makePointer(maybeSuper)}
        |""".stripMargin
@@ -222,7 +222,7 @@ final case class AccessMean(identifier: IdentifierWithType,
       |""".stripMargin
 
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=pink shape=%s style=filled label=\"%s\"]"
+    "%s%s [margin=0 fillcolor=pink shape=%s style=\"rounded,filled\" label=\"%s\"]"
       .format(shape.lbl, identifier.id, shape.toString.toLowerCase, identifier.produceId)
 
   override def relatesWith(): String = "" //Relates with no one, as it is sort of the base object that other point to
@@ -250,8 +250,6 @@ object AccessMean {
     })
 }
 
-//todo: 1. Change Connection to connection with type.
-// 2. We are not really doing anything yet with the key from the connection we have retrieved
 /** An access profile has more data, but these are the sides to it that are of importance, also tagged as graph object */
 final case class AccessProfile(identifier: IdentifierWithType,
                                name: String,
@@ -267,17 +265,16 @@ final case class AccessProfile(identifier: IdentifierWithType,
       |""".stripMargin
 
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=purple shape=%s style=filled label=\"%s, %s\"]"
+    "%s%s [margin=0 fillcolor=aquamarine3 shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, identifier.id, shape.toString.toLowerCase, name, identifier.produceId)
 
   override def relatesWith(): String = {
-    val decideEntity: String => String = str => if (str.toLowerCase.startsWith("individual")) Grantee.shape.lbl else Grantor.shape.lbl //todo: This may not be too accurate, confirm
-    val makePointer: Option[Connection] => String = optional =>
-      if (optional.nonEmpty) s"${shape.lbl}${identifier.id} -> ${optional.map(c => "Link" + c.value).get}" else "" //todo: Color the holderId to diff it from the userId, also determine a better way to decide link
+    val makePointer: (Option[Connection], String) => String = (optional, color) =>
+      if (optional.nonEmpty) s"${shape.lbl}${identifier.id} -> ${optional.map(c => c.connKey + c.value).get} [minlen=3, penwidth=2, color=$color]" else ""
     s"""
-       | ${makePointer(holderId)}
-       | ${makePointer(userId)}
-       | ${ipIpRelations.filterNot(_.value.isBlank).map(ipIp => shape.lbl + identifier.id + " -> " + IpIpRelationship.shape.lbl + ipIp.value).mkString("\n")}
+       | ${makePointer(holderId, "red")}
+       | ${makePointer(userId, "blue")}
+       | ${ipIpRelations.filterNot(_.value.isBlank).map(ipIp => shape.lbl + identifier.id + " -> " + IpIpRelationship.shape.lbl + ipIp.value + " [minlen=3, penwidth=2]").mkString("\n")}
        |""".stripMargin
   }
 }
@@ -307,13 +304,16 @@ final case class AccessProfileConnAccessMean(accessProfile: AccessProfile, acces
 
   /** This is the actual graph which is in fact what graphviz can turn into an understandable image */
   override def materializeGraph(): String =
-    "%s%s [margin=0 fillcolor=orange shape=%s style=filled label=\"%s, %s\"]"
+    "%s%s [margin=0 fillcolor=orange shape=%s style=\"rounded,filled\" label=\"%s, %s\"]"
       .format(shape.lbl, accessProfile.identifier.id, shape.toString.toLowerCase, accessProfile.name, accessProfile.identifier.produceId)
+
+  val meansString: String = accessMeans.map(_.identifier.produceId).mkString(" |  ")
 
   /** This allows an object point to how it's key/id relates with some other objects within it's context or reach */
   override def relatesWith(): String = {
     s"""
-       | ${accessMeans.map(mean => shape.lbl + accessProfile.identifier.id + " -> " + mean.shape.lbl + mean.identifier.id).mkString("\n")}
+       | Prof${accessProfile.identifier.id}[shape=record, style=\"rounded,filled\", fillcolor=pink label=\"{Access Means | $meansString}\"]
+       | Prof${accessProfile.identifier.id} -> ${accessProfile.shape.lbl}${accessProfile.identifier.id} [dir=none, minlen=3, penwidth=2]
        |""".stripMargin
   }
 }
@@ -345,7 +345,7 @@ final case class SyncGraph(grantee: Option[Grantee],
                            accessProfiles: Option[AccessProfiles],
                            accessProfileConnAccessMean: Option[AccessProfilesConnAccessMeans]) {
 
-  def returnDataOrEmptyStr(optionalData: Option[String]) = optionalData.getOrElse("")
+  def returnDataOrEmptyStr(optionalData: Option[String]): String = optionalData.getOrElse("")
 
   lazy val relationships: Seq[Serializable] = List(
     grantee.map(_.partialBuildGraph()).getOrElse(""),
@@ -355,16 +355,14 @@ final case class SyncGraph(grantee: Option[Grantee],
     accessProfileConnAccessMean.map(_.map(_.partialBuildGraph()).mkString(",")).getOrElse("")
   )
 
-  lazy val materializeRelationships =
+  lazy val materializeRelationships: String =
     s"""
       |digraph ProfileSyncMat {
       | {
       |   \t${returnDataOrEmptyStr(grantee.map(_.materializeGraph()))}
       |   \t${returnDataOrEmptyStr(grantors.map(_.map(_.materializeGraph()).mkString(",")))}
       |   \t${returnDataOrEmptyStr(ipIpRelationships.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
-      |   \t${returnDataOrEmptyStr(accessMeans.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(accessProfiles.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
-      |   \t${returnDataOrEmptyStr(accessProfileConnAccessMean.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       | }
       |  \t${returnDataOrEmptyStr(ipIpRelationships.map(_.map(_.relatesWith()).mkString("\n\t\t")))}
       |  \t${returnDataOrEmptyStr(accessProfiles.map(_.map(_.relatesWith()).mkString("\n\t\t")))}

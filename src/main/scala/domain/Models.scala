@@ -8,6 +8,7 @@ import domain.Grantor.Grantors
 import domain.IpIpRelationship.IpIpRelationships
 import domain.Keys.SharedKeys._
 
+import com.chrisworks.domain.EntityType.Organisation
 import io.circe.{Json, JsonObject}
 
 /** We shall use these shapes to further characterize a particular type and will use it in generating the graph */
@@ -159,6 +160,11 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
                                   maybeSuper: Option[ConnectionWithType])
   extends GraphObject(Shape.Trapezium) {
 
+  val possibleSuperHolder: String = if (maybeSuper.isEmpty) ""
+  else "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"%s: %s\"]"
+    .format(Grantor.shape.lbl, maybeSuper.get.connection.value, Organisation.color,
+      Grantor.shape.toString.toLowerCase, maybeSuper.get.connection.connKey, maybeSuper.get.connection.value)
+
   override def partialBuildGraph(): String =
     s"""
        | [$shape: $countryCode] -> [${identifier.produceId}]
@@ -172,12 +178,16 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
       .format(shape.lbl, identifier.id, shape.toString.toLowerCase, countryCode, identifier.produceId)
 
   override def relatesWith(): String = {
-    val makePointer: Option[ConnectionWithType] => String = optional =>
+    val makePointerGrantee: Option[ConnectionWithType] => String = optional =>
       if (optional.nonEmpty) s"${shape.lbl}${identifier.id} -> ${optional.map(c => c.shape.lbl + c.connection.value).get} [minlen=3, penwidth=2]" else ""
+
+    val makePointerSuperHolder: Option[ConnectionWithType] => String = optional =>
+      if (optional.nonEmpty) s"${optional.map(c => c.shape.lbl + c.connection.value).get} -> ${shape.lbl}${identifier.id} [minlen=3, penwidth=2]" else ""
+
     s"""
        | ${grantors.map(grantor => shape.lbl + identifier.id + " -> " + grantor.shape.lbl + grantor.connection.value + " [minlen=3, penwidth=2]").mkString("\n")}
-       | ${makePointer(grantee)}
-       | ${makePointer(maybeSuper)}
+       | ${makePointerGrantee(grantee)}
+       | ${makePointerSuperHolder(maybeSuper)}
        |""".stripMargin
   }
 }
@@ -198,7 +208,7 @@ object IpIpRelationship {
         obj.extractAsString(COUNTRY_CODE),
         obj.extractFromArrayAsConnectionWithType(GRANTORS_KEY, Grantor.shape),
         obj.extractFromObjAsConnectionWithType(GRANTEE_KEY, Grantee.shape).headOption,
-        obj.extractFromObjAsConnectionWithType(SUPER_HOLDER, Shape.Unknown).headOption
+        obj.extractFromObjAsConnectionWithType(SUPER_HOLDER, Grantor.shape, ORGANISATION).headOption
       )
     )
 
@@ -357,6 +367,7 @@ final case class SyncGraph(grantee: Option[Grantee],
       | {
       |   \t${returnDataOrEmptyStr(grantee.map(_.materializeGraph()))}
       |   \t${returnDataOrEmptyStr(grantors.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
+      |   \t${returnDataOrEmptyStr(ipIpRelationships.map(_.map(_.possibleSuperHolder).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(accessMeans.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(ipIpRelationships.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
       |   \t${returnDataOrEmptyStr(accessProfiles.map(_.map(_.materializeGraph()).mkString("\n\t\t")))}
@@ -417,6 +428,7 @@ object Keys {
     val COUNTRY_CODE = "countryCode"
     val RELATIONSHIPS = "relationships"
     val SUPER_HOLDER = "maybeSuperHolder"
+    val ORGANISATION = "Organisation"
     val DEFAULT_ACCESS_PROFILE = "defaultAccessProfileId"
   }
 
@@ -428,9 +440,9 @@ final case class JsonObjectEnricher(obj: JsonObject) {
   def extractAsString(key: String): String = obj(key).map(_.toString()).getOrElse("")
     .replaceAll("[^a-zA-Z\\d]+","")
 
-  private val readConnectionWithTypeFrom: (JsonObject, Shape) => Option[List[ConnectionWithType]] = (jsonObject, shape) => {
+  private val readConnectionWithTypeFrom: (JsonObject, Shape, String) => Option[List[ConnectionWithType]] = (jsonObject, shape, root) => {
     val oType = jsonObject(TYPE).map(_.toString()).getOrElse("")
-    jsonObject(ID)
+    jsonObject(root)
       .flatMap(_.asObject)
       .map(_.toIterable
         .foldLeft(List.empty[ConnectionWithType]) { case (res, next) =>
@@ -458,18 +470,18 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       ).getOrElse(List.empty)
 
 
-  def extractFromArrayAsConnectionWithType(key: String, shape: Shape): List[ConnectionWithType] = {
+  def extractFromArrayAsConnectionWithType(key: String, shape: Shape, root: String = ID): List[ConnectionWithType] = {
     (for {
       s1 <- obj(key)
       s2 <- s1.asArray.map(_.toList.flatMap(_.asObject))
-    } yield s2.flatMap(obj => readConnectionWithTypeFrom(obj, shape))).getOrElse(List.empty).flatten
+    } yield s2.flatMap(obj => readConnectionWithTypeFrom(obj, shape, root))).getOrElse(List.empty).flatten
   }
 
-  def extractFromObjAsConnectionWithType(key: String, shape: Shape): List[ConnectionWithType] = {
+  def extractFromObjAsConnectionWithType(key: String, shape: Shape, root: String = ID): List[ConnectionWithType] = {
     (for {
       s1 <- obj(key)
       s2 <- s1.asObject
-    } yield s2).flatMap(obj => readConnectionWithTypeFrom(obj, shape)).getOrElse(List.empty)
+    } yield s2).flatMap(obj => readConnectionWithTypeFrom(obj, shape, root)).getOrElse(List.empty)
   }
 
 }

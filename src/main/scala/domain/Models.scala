@@ -8,7 +8,6 @@ import domain.Grantor.Grantors
 import domain.IpIpRelationship.IpIpRelationships
 import domain.Keys.SharedKeys._
 
-import com.chrisworks.domain.EntityType.Organisation
 import io.circe.{Json, JsonObject}
 
 /** We shall use these shapes to further characterize a particular type and will use it in generating the graph */
@@ -161,9 +160,11 @@ final case class IpIpRelationship(identifier: IdentifierWithType,
   extends GraphObject(Shape.Trapezium) {
 
   val possibleSuperHolder: String = if (maybeSuper.isEmpty) ""
-  else "%s%s [margin=0 fillcolor=%s shape=%s style=\"rounded,filled\" label=\"SuperHolder, %s, %s\"]"
-    .format(Grantor.shape.lbl, maybeSuper.get.connection.value, Organisation.color,
-      Grantor.shape.toString.toLowerCase, countryCode, maybeSuper.get.connection.value)
+  else {
+    val color = EntityType.from(maybeSuper.get.connection.connKey.split("-")(0)).color
+    "%s%s [margin=0 fillcolor=%s shape=house style=\"filled\" label=\"SuperHolder, %s, %s\"]"
+      .format(maybeSuper.get.shape.lbl, maybeSuper.get.connection.value, color, countryCode, maybeSuper.get.connection.value)
+  }
 
   override def partialBuildGraph(): String =
     s"""
@@ -209,6 +210,7 @@ object IpIpRelationship {
         obj.extractFromArrayAsConnectionWithType(GRANTORS_KEY, Grantor.shape),
         obj.extractFromObjAsConnectionWithType(GRANTEE_KEY, Grantee.shape).headOption,
         obj.extractFromObjAsConnectionWithType(SUPER_HOLDER, Grantor.shape, ORGANISATION).headOption
+          .orElse(obj.extractFromObjAsConnectionWithType(SUPER_HOLDER, Grantor.shape, INDIVIDUAL).headOption)
       )
     )
 
@@ -429,6 +431,7 @@ object Keys {
     val RELATIONSHIPS = "relationships"
     val SUPER_HOLDER = "maybeSuperHolder"
     val ORGANISATION = "Organisation"
+    val INDIVIDUAL = "Individual"
     val DEFAULT_ACCESS_PROFILE = "defaultAccessProfileId"
   }
 
@@ -446,7 +449,7 @@ final case class JsonObjectEnricher(obj: JsonObject) {
       .flatMap(_.asObject)
       .map(_.toIterable
         .foldLeft(List.empty[ConnectionWithType]) { case (res, next) =>
-          res :+ ConnectionWithType(Connection(next._1, next._2.turnToString), oType, shape)
+          res :+ ConnectionWithType(Connection(root + "-" + next._1, next._2.turnToString), oType, shape)
         }
       )
   }
